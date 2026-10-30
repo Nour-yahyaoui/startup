@@ -1,15 +1,24 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
+import { api } from '../lib/api.js';
 import { Icon } from '../components/Icons.jsx';
 import { useApp } from '../App.jsx';
 
 export default function Login() {
-  const { login, register, toast, theme, toggleTheme } = useApp();
+  const { login, register, theme, toggleTheme } = useApp();
   const [mode, setMode] = useState('login'); // login | register
   const [email, setEmail] = useState('');
   const [name, setName] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState('');
+  const [registrationOpen, setRegistrationOpen] = useState(false);
+
+  useEffect(() => {
+    api.get('/api/auth/bootstrap').then(({ registrationOpen: open }) => {
+      setRegistrationOpen(open);
+      if (open) setMode('register');
+    }).catch(() => {});
+  }, []);
 
   const submit = async (e) => {
     e.preventDefault();
@@ -22,7 +31,7 @@ export default function Login() {
   };
 
   return (
-    <div className="h-full flex items-center justify-center p-6">
+    <div className="min-h-full flex items-center justify-center p-6">
       <button onClick={toggleTheme} className="absolute top-4 right-4 btn-ghost" title="Toggle theme">
         <Icon name={theme === 'dark' ? 'sun' : 'moon'} />
       </button>
@@ -44,11 +53,11 @@ export default function Login() {
               onClick={() => setMode('login')}
               className={`flex-1 py-1.5 rounded-md text-sm font-medium transition ${mode === 'login' ? 'bg-surface shadow-soft' : 'text-muted'}`}
             >Sign in</button>
-            <button
+            {registrationOpen && <button
               type="button"
               onClick={() => setMode('register')}
               className={`flex-1 py-1.5 rounded-md text-sm font-medium transition ${mode === 'register' ? 'bg-surface shadow-soft' : 'text-muted'}`}
-            >Create account</button>
+            >Create workspace</button>}
           </div>
 
           <form onSubmit={submit} className="space-y-3">
@@ -77,15 +86,15 @@ export default function Login() {
 
           <p className="text-xs text-muted mt-6 text-center">
             {mode === 'login'
-              ? "No account yet? Your team admin can invite you, or you can create your own workspace."
-              : "The first account in a workspace is automatically assigned the Owner role."}
+              ? "Need an account? Ask a workspace administrator to add you."
+              : "Set up the first owner account. Additional members must be added by an administrator."}
           </p>
         </div>
 
         <div className="mt-6 grid grid-cols-3 gap-2 text-xs text-muted">
           <Feature icon="zap" title="Realtime" desc="Everything updates live" />
           <Feature icon="folder" title="Fast file transfer" desc="Drag & drop, no size drama" />
-          <Feature icon="chat" title="Built-in chat" desc="Channels & DMs" />
+          <Feature icon="chat" title="Built-in chat" desc="Private project channels" />
         </div>
       </div>
     </div>

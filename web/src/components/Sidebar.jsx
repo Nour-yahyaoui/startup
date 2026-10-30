@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Icon } from './Icons.jsx';
 import { useApp } from '../App.jsx';
 import { Avatar } from '../pages/Dashboard.jsx';
@@ -14,42 +14,47 @@ const NAV = [
 ];
 
 export default function Sidebar() {
-  const { page, setPage, user, setActiveProjectId, onlineUsers } = useApp();
+  const { page, setPage, user, setActiveProjectId, onlineUsers, rt } = useApp();
   const [projects, setProjects] = useState([]);
   const [collapsed, setCollapsed] = useState(false);
+  const loadVersion = useRef(0);
 
   const isAdmin = user.role === 'owner' || user.role === 'admin';
 
-  const loadProjects = async () => {
+  const loadProjects = useCallback(async () => {
+    const version = ++loadVersion.current;
     try {
       const r = await api.get('/api/projects');
-      setProjects(r.projects);
+      if (version === loadVersion.current) setProjects(r.projects);
     } catch {}
-  };
-  useEffect(() => { loadProjects();
-    const t = setInterval(loadProjects, 10000);
-    const off = useApp().rt.on('project:create', loadProjects);
-    const off2 = useApp().rt.on('project:delete', loadProjects);
-    const off3 = useApp().rt.on('project:update', loadProjects);
-    return () => { clearInterval(t); off?.(); off2?.(); off3?.(); };
   }, []);
+  useEffect(() => {
+    loadProjects();
+    const t = setInterval(loadProjects, 10000);
+    const off = rt.on('project:create', loadProjects);
+    const off2 = rt.on('project:delete', loadProjects);
+    const off3 = rt.on('project:update', loadProjects);
+    const off4 = rt.on('project:access-revoked', loadProjects);
+    const off5 = rt.on('project:membership-changed', loadProjects);
+    return () => { loadVersion.current++; clearInterval(t); off(); off2(); off3(); off4(); off5(); };
+  }, [loadProjects, rt, user.role]);
 
   return (
-    <aside className={`${collapsed ? 'w-16' : 'w-64'} shrink-0 border-r border-border bg-surface flex flex-col transition-all duration-200`}>
+    <aside className={`${collapsed ? 'w-16' : 'w-16 md:w-64'} shrink-0 border-r border-border bg-surface flex flex-col transition-all duration-200`}>
       <div className="h-14 px-4 flex items-center justify-between border-b border-border">
         <div className={`flex items-center gap-2 ${collapsed ? 'justify-center w-full' : ''}`}>
           <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-primary to-accent flex items-center justify-center text-white">
             <Icon name="logo" size={16} />
           </div>
-          {!collapsed && <span className="font-semibold tracking-tight">Nexa</span>}
+          {!collapsed && <span className="hidden md:inline font-semibold tracking-tight">Nexa</span>}
         </div>
         {!collapsed && (
-          <button className="btn-ghost !p-1.5" onClick={() => setCollapsed(true)} title="Collapse">
+          <button className="btn-ghost !p-1.5 hidden md:inline-flex" onClick={() => setCollapsed(true)} title="Collapse">
             <Icon name="chevron" size={14} style={{ transform: 'rotate(90deg)' }} />
           </button>
         )}
         {collapsed && (
-          <button className="btn-ghost !p-1.5 absolute left-14" onClick={() => setCollapsed(false)} title="Expand">
+          <button className="btn-ghost !p-1.5 absolute left-14 hidden md:inline-flex" onClick={() => setCollapsed(false)} title="Expand">
             <Icon name="chevron" size={14} style={{ transform: 'rotate(-90deg)' }} />
           </button>
         )}
@@ -60,22 +65,22 @@ export default function Sidebar() {
           <button
             key={item.id}
             onClick={() => { setPage(item.id); if (item.id !== 'project') setActiveProjectId(null); }}
-            className={`sidebar-item w-full ${page === item.id ? 'active' : ''} ${collapsed ? 'justify-center !px-2' : ''}`}
+            className={`sidebar-item w-full ${page === item.id ? 'active' : ''} ${collapsed ? 'justify-center !px-2' : 'justify-center md:justify-start !px-2 md:!px-2.5'}`}
             title={item.label}
           >
             <Icon name={item.icon} size={18} />
-            {!collapsed && <span>{item.label}</span>}
+            {!collapsed && <span className="hidden md:inline">{item.label}</span>}
           </button>
         ))}
 
         {!collapsed && projects.length > 0 && (
-          <div className="pt-4 pb-1 px-2 text-[11px] uppercase tracking-wide text-muted font-semibold">Projects</div>
+          <div className="hidden md:block pt-4 pb-1 px-2 text-[11px] uppercase tracking-wide text-muted font-semibold">Projects</div>
         )}
         {!collapsed && projects.map(p => (
           <button
             key={p.id}
             onClick={() => { setPage('project'); setActiveProjectId(p.id); }}
-            className={`sidebar-item w-full ${page === 'project' ? 'active' : ''}`}
+            className={`sidebar-item w-full hidden md:flex ${page === 'project' ? 'active' : ''}`}
             title={p.name}
           >
             <span className="w-2 h-2 rounded-full shrink-0" style={{ background: p.color }} />
@@ -85,7 +90,7 @@ export default function Sidebar() {
       </nav>
 
       {!collapsed && (
-        <div className="p-2 border-t border-border">
+        <div className="hidden md:block p-2 border-t border-border">
           <div className="px-2 pb-1 text-[11px] uppercase tracking-wide text-muted font-semibold">Online now</div>
           <div className="flex flex-wrap gap-1 px-1">
             {[...onlineUsers.values()].slice(0, 12).map(u => (

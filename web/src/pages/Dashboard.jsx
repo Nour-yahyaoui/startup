@@ -64,10 +64,10 @@ function TopBar({ children }) {
     settings: 'Settings'
   };
   return (
-    <header className="h-14 border-b border-border bg-bg/80 backdrop-blur px-6 flex items-center justify-between sticky top-0 z-20">
+    <header className="h-14 border-b border-border bg-bg/80 backdrop-blur px-3 sm:px-6 flex items-center justify-between sticky top-0 z-20">
       <div className="flex items-center gap-3">
         <h2 className="text-base font-semibold">{titles[page] || 'Nexa'}</h2>
-        <span className="chip"><Icon name="zap" size={12}/> Realtime</span>
+        <span className="chip hidden sm:inline-flex"><Icon name="zap" size={12}/> Realtime</span>
       </div>
       {children}
     </header>

@@ -1,45 +1,77 @@
-import React, { useEffect, useRef, useState, useMemo } from 'react';
+import React, { useCallback, useEffect, useRef, useState, useMemo } from 'react';
 import { Icon } from '../components/Icons.jsx';
 import { Avatar } from './Dashboard.jsx';
 import { api } from '../lib/api.js';
 import { useApp } from '../App.jsx';
-import { formatTime, initials } from '../lib/util.js';
+import { formatTime } from '../lib/util.js';
 
 export default function Chat() {
-  const { rt, activeChannel, setActiveChannel, user, onlineUsers } = useApp();
+  const { rt, activeChannel, setActiveChannel, user, onlineUsers, can, toast } = useApp();
   const [channels, setChannels] = useState([]);
-  const [previews, setPreviews] = useState({});
+  const [channelQuery, setChannelQuery] = useState('');
   const [messages, setMessages] = useState([]);
   const [text, setText] = useState('');
   const [typingUsers, setTypingUsers] = useState(new Set());
   const scrollRef = useRef(null);
   const inputRef = useRef(null);
   const typingTimeout = useRef(null);
+  const channelsVersion = useRef(0);
+  const messagesVersion = useRef(0);
 
-  // Load channel list
+  const loadChannels = useCallback(async () => {
+    const version = ++channelsVersion.current;
+    try {
+      const result = await api.get('/api/channels');
+      if (version !== channelsVersion.current) return;
+      setChannels(result.channels);
+      setActiveChannel(current => result.channels.some(channel => channel.id === current) ? current : 'global');
+    } catch (e) { if (version === channelsVersion.current) toast(e.message, 'error'); }
+  }, [setActiveChannel, toast]);
+
   useEffect(() => {
-    api.get('/api/channels').then(r => {
-      setChannels(r.channels);
-      setPreviews(r.previews || {});
-    });
-  }, []);
+    loadChannels();
+    const offs = ['project:create', 'project:update', 'project:delete', 'project:access-revoked', 'project:membership-changed'].map(type => rt.on(type, loadChannels));
+    return () => { channelsVersion.current++; offs.forEach(off => off()); };
+  }, [loadChannels, rt, user.role]);
 
-  // Subscribe to active channel and load messages
+  // Wait for the authenticated socket handshake and fetch only permitted history.
   useEffect(() => {
     if (!activeChannel) return;
+    let active = true;
+    const version = ++messagesVersion.current;
     rt.subscribe(activeChannel);
-    setMessages([]);
-    api.get(`/api/messages?channel=${activeChannel}`).then(r => setMessages(r.messages));
-    return () => rt.unsubscribe(activeChannel);
-  }, [activeChannel, rt]);
+    setMessages([]); setTypingUsers(new Set());
+    api.get(`/api/messages?channel=${encodeURIComponent(activeChannel)}`).then(result => {
+      if (!active || version !== messagesVersion.current) return;
+      setMessages(current => {
+        const merged = new Map([...result.messages, ...current].map(message => [message.id, message]));
+        return [...merged.values()].sort((a, b) => a.createdAt - b.createdAt);
+      });
+    }).catch(e => {
+      if (!active || version !== messagesVersion.current) return;
+      if (e.status === 404) setActiveChannel('global');
+      else toast(e.message, 'error');
+    });
+    return () => { active = false; messagesVersion.current++; clearTimeout(typingTimeout.current); rt.unsubscribe(activeChannel); };
+  }, [activeChannel, rt, setActiveChannel, toast]);
+
+  useEffect(() => {
+    const removeProject = ev => {
+      if (activeChannel !== 'project:' + ev.projectId) return;
+      messagesVersion.current++;
+      setMessages([]); setTypingUsers(new Set()); setActiveChannel('global');
+    };
+    const off1 = rt.on('project:access-revoked', removeProject);
+    const off2 = rt.on('project:delete', removeProject);
+    return () => { off1(); off2(); };
+  }, [rt, activeChannel, setActiveChannel]);
 
   // Realtime message + typing events
   useEffect(() => {
     const off1 = rt.on('chat:message', (ev) => {
       if (ev.message.channel === activeChannel) {
-        setMessages(m => [...m, ev.message]);
+        setMessages(m => m.some(message => message.id === ev.message.id) ? m : [...m, ev.message]);
       }
-      setPreviews(p => ({ ...p, [ev.message.channel]: ev.message }));
     });
     const off2 = rt.on('typing', (ev) => {
       if (ev.channel !== activeChannel) return;
@@ -61,7 +93,7 @@ export default function Chat() {
 
   const send = (e) => {
     e.preventDefault();
-    if (!text.trim()) return;
+    if (!text.trim() || !can('chat.write')) return;
     rt.sendChat(activeChannel, text.trim());
     setText('');
     inputRef.current?.focus();
@@ -96,16 +128,16 @@ export default function Chat() {
   return (
     <div className="h-[calc(100vh-3.5rem)] flex">
       {/* Channel sidebar */}
-      <aside className="w-64 border-r border-border flex flex-col shrink-0">
+      <aside className="w-32 sm:w-64 border-r border-border flex flex-col shrink-0">
         <div className="p-3">
           <div className="relative">
             <Icon name="search" size={16} className="absolute left-2.5 top-2.5 text-muted" />
-            <input className="input !pl-8" placeholder="Search channels…" />
+            <input className="input !pl-8" placeholder="Search channels…" aria-label="Search channels" value={channelQuery} onChange={e => setChannelQuery(e.target.value)} />
           </div>
         </div>
         <div className="px-3 text-[11px] uppercase tracking-wide text-muted font-semibold mb-1">Channels</div>
         <div className="flex-1 overflow-y-auto px-2 pb-3">
-          {channels.map(ch => (
+          {channels.filter(ch => ch.name.toLowerCase().includes(channelQuery.toLowerCase())).map(ch => (
             <button
               key={ch.id}
               onClick={() => setActiveChannel(ch.id)}
@@ -127,7 +159,7 @@ export default function Chat() {
           {activeCh?.kind === 'global' ? <Icon name="hash" size={18} /> : <span className="w-3 h-3 rounded-full" style={{ background: activeCh?.color }} />}
           <div>
             <div className="font-semibold text-sm">#{activeCh?.name || 'general'}</div>
-            <div className="text-xs text-muted">{messages.length} messages · realtime</div>
+            <div className="text-xs text-muted">{activeCh?.kind === 'project' ? 'Private to project members and admins' : 'Visible to the workspace'} · {messages.length} messages</div>
           </div>
         </div>
 
@@ -169,7 +201,7 @@ export default function Chat() {
         </div>
 
         {/* Composer */}
-        <form onSubmit={send} className="p-4 border-t border-border">
+        {can('chat.write') ? <form onSubmit={send} className="p-4 border-t border-border">
           <div className="flex items-end gap-2 card p-2 pl-3">
             <button type="button" className="btn-ghost !p-1.5" title="Attach file"><Icon name="paperclip" size={18} /></button>
             <button type="button" className="btn-ghost !p-1.5" title="Emoji"><Icon name="smile" size={18} /></button>
@@ -188,7 +220,7 @@ export default function Chat() {
             </button>
           </div>
           <div className="text-[11px] text-muted mt-2 px-1">Press <span className="kbd">Enter</span> to send · <span className="kbd">Shift+Enter</span> for newline</div>
-        </form>
+        </form> : <div className="p-4 border-t border-border text-sm text-muted">Your role has read-only access to chat.</div>}
       </div>
     </div>
   );

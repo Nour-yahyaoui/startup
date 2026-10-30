@@ -5,7 +5,8 @@ export function setToken(t) { localStorage.setItem(TOKEN_KEY, t); }
 export function clearToken() { localStorage.removeItem(TOKEN_KEY); }
 
 async function request(url, opts = {}) {
-  const headers = { 'Content-Type': 'application/json', ...(opts.headers || {}) };
+  const headers = { ...(opts.headers || {}) };
+  if (opts.body !== undefined && !headers['Content-Type']) headers['Content-Type'] = 'application/json';
   const token = getToken();
   if (token) headers.Authorization = 'Bearer ' + token;
   const res = await fetch(url, { ...opts, headers });
@@ -26,15 +27,34 @@ export const api = {
   del: (url) => request(url, { method: 'DELETE' }),
   async upload(file, projectId) {
     const fd = new FormData();
-    fd.append('file', file);
+    // Send scope before the stream; the server also validates fields sent after it.
     if (projectId) fd.append('projectId', projectId);
+    fd.append('file', file);
     const token = getToken();
     const res = await fetch('/api/files', { method: 'POST', body: fd, headers: token ? { Authorization: 'Bearer ' + token } : {} });
     const body = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(body.error || 'Upload failed');
     return body;
   },
-  downloadUrl(id) { return `/api/files/${id}/download`; }
+  async download(id, filename = 'download') {
+    // Navigation links cannot attach the bearer token; fetch before saving instead.
+    const token = getToken();
+    const res = await fetch(`/api/files/${encodeURIComponent(id)}/download`, {
+      headers: token ? { Authorization: 'Bearer ' + token } : {}
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.error || 'Download failed');
+    }
+    const url = URL.createObjectURL(await res.blob());
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
 };
 
 // ---- Auth helpers stored in localStorage for UI state ----

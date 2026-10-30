@@ -6,7 +6,8 @@ export default defineConfig({
   server: {
     host: '0.0.0.0',
     port: 5173,
-    allowedHosts: true,
+    // Allow Arena previews without disabling Vite's host protections globally.
+    allowedHosts: ['.e2b.app'],
     proxy: {
       '/api': 'http://localhost:8787',
       '/ws': { target: 'ws://localhost:8787', ws: true }

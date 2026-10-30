@@ -3,9 +3,13 @@ import initSqlJs from 'sql.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { nanoid } from 'nanoid';
+import { DEFAULT_ROLES } from './roles.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const DATA_DIR = path.resolve(__dirname, '../../../data');
+export const DATA_DIR = process.env.NEXA_DATA_DIR
+  ? path.resolve(process.env.NEXA_DATA_DIR)
+  : path.resolve(__dirname, '../../../data');
 const DB_PATH = path.join(DATA_DIR, 'nexa.db');
 
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -19,6 +23,10 @@ export async function initDb() {
   db = buf ? new SQL.Database(buf) : new SQL.Database();
   db.run('PRAGMA foreign_keys = ON;');
   migrate();
+  for (const role of DEFAULT_ROLES) {
+    db.run('INSERT OR IGNORE INTO roles (id, name, permissions, created_at) VALUES (?, ?, ?, ?)',
+      [nanoid(12), role.name, JSON.stringify(role.permissions), Date.now()]);
+  }
   persist();
   return db;
 }
@@ -34,7 +42,9 @@ function migrate() {
       avatar_color TEXT NOT NULL,
       title TEXT,
       created_at INTEGER NOT NULL,
-      last_seen INTEGER
+      last_seen INTEGER,
+      disabled_at INTEGER,
+      session_version INTEGER NOT NULL DEFAULT 0
     );
 
     CREATE TABLE IF NOT EXISTS roles (
@@ -122,6 +132,10 @@ function migrate() {
     CREATE INDEX IF NOT EXISTS idx_tasks_project ON tasks(project_id, position);
     CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id, created_at DESC);
   `);
+  // Existing workspaces predate account deactivation. Additive, idempotent migration.
+  const userColumns = db.exec('PRAGMA table_info(users)')[0].values.map(row => row[1]);
+  if (!userColumns.includes('disabled_at')) db.run('ALTER TABLE users ADD COLUMN disabled_at INTEGER');
+  if (!userColumns.includes('session_version')) db.run('ALTER TABLE users ADD COLUMN session_version INTEGER NOT NULL DEFAULT 0');
 }
 
 export function persist() {
@@ -161,4 +175,19 @@ export function execMany(sql) {
 
 export function rawDb() {
   return db;
+}
+
+// Group related writes without persisting a partially completed operation.
+export function transaction(fn) {
+  db.run('BEGIN');
+  let result;
+  try {
+    result = fn(db);
+    db.run('COMMIT');
+  } catch (error) {
+    db.run('ROLLBACK');
+    throw error;
+  }
+  persist();
+  return result;
 }

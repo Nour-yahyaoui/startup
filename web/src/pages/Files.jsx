@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Icon } from '../components/Icons.jsx';
 import { Avatar } from './Dashboard.jsx';
 import FileDropZone from '../components/FileDropZone.jsx';
@@ -7,26 +7,38 @@ import { useApp } from '../App.jsx';
 import { formatBytes, formatRelative } from '../lib/util.js';
 
 export default function Files() {
-  const { toast } = useApp();
+  const { toast, rt, user, can } = useApp();
   const [files, setFiles] = useState([]);
   const [query, setQuery] = useState('');
 
-  const load = async () => {
-    const r = await api.get('/api/files');
-    setFiles(r.files);
-  };
-  useEffect(() => { load();
-    const off1 = useApp().rt.on('file:new', ev => setFiles(f => [ev.file, ...f]));
-    const off2 = useApp().rt.on('file:delete', ev => setFiles(f => f.filter(x => x.id !== ev.fileId)));
-    return () => { off1(); off2(); };
-  }, []);
+  const loadVersion = useRef(0);
+  const load = useCallback(async () => {
+    const version = ++loadVersion.current;
+    try {
+      const r = await api.get('/api/files');
+      if (version === loadVersion.current) setFiles(r.files);
+    } catch (e) { if (version === loadVersion.current) toast(e.message, 'error'); }
+  }, [toast]);
+  useEffect(() => {
+    load();
+    const off1 = rt.on('file:new', ev => { setFiles(f => [ev.file, ...f.filter(x => x.id !== ev.file.id)]); load(); });
+    const off2 = rt.on('file:delete', ev => { setFiles(f => f.filter(x => x.id !== ev.fileId)); load(); });
+    const removeProject = ev => { setFiles(f => f.filter(x => x.projectId !== ev.projectId)); load(); };
+    const off3 = rt.on('project:access-revoked', removeProject);
+    const off4 = rt.on('project:delete', removeProject);
+    return () => { loadVersion.current++; off1(); off2(); off3(); off4(); };
+  }, [load, rt]);
 
   const del = async (id, name) => {
     if (!confirm(`Delete ${name}?`)) return;
-    await api.del('/api/files/' + id);
-    setFiles(f => f.filter(x => x.id !== id));
-    toast('File deleted', 'success');
+    try {
+      await api.del('/api/files/' + id);
+      setFiles(f => f.filter(x => x.id !== id));
+      toast('File deleted', 'success');
+    } catch (e) { toast(e.message, 'error'); }
   };
+
+  const download = file => api.download(file.id, file.name).catch(e => toast(e.message, 'error'));
 
   const filtered = files.filter(f => !query || f.name.toLowerCase().includes(query.toLowerCase()));
 
@@ -43,16 +55,16 @@ export default function Files() {
         </div>
       </div>
 
-      <FileDropZone />
+      {can('files.write') && <FileDropZone />}
 
-      <div className="card overflow-hidden">
+      <div className="card overflow-x-auto">
         {filtered.length === 0 ? (
           <div className="p-10 text-center text-muted">
             <Icon name="folder" size={32} className="mx-auto mb-2 opacity-50"/>
             No files yet.
           </div>
         ) : (
-          <table className="w-full text-sm">
+          <table className="w-full min-w-[640px] text-sm">
             <thead>
               <tr className="text-left text-xs uppercase text-muted border-b border-border">
                 <th className="px-4 py-3 font-semibold">Name</th>
@@ -83,8 +95,8 @@ export default function Files() {
                   <td className="px-4 py-3 text-muted">{formatRelative(f.createdAt)}</td>
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-1 justify-end">
-                      <a className="btn-ghost !p-1.5" href={api.downloadUrl(f.id)} title="Download"><Icon name="download" size={16}/></a>
-                      <button className="btn-ghost !p-1.5 text-danger" onClick={() => del(f.id, f.name)} title="Delete"><Icon name="trash" size={16}/></button>
+                      <button className="btn-ghost !p-1.5" onClick={() => download(f)} title="Download" aria-label={`Download ${f.name}`}><Icon name="download" size={16}/></button>
+                      {can('files.write') && (user.role === 'owner' || user.role === 'admin' || f.uploaderId === user.id) && <button className="btn-ghost !p-1.5 text-danger" onClick={() => del(f.id, f.name)} title="Delete" aria-label={`Delete ${f.name}`}><Icon name="trash" size={16}/></button>}
                     </div>
                   </td>
                 </tr>

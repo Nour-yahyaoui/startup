@@ -2,7 +2,6 @@ import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import multipart from '@fastify/multipart';
 import fastifyStatic from '@fastify/static';
-import { createServer } from 'node:http';
 import path from 'node:path';
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -65,8 +64,9 @@ async function start() {
   app.hub = new Hub(server);
 
   server.listen(PORT, '0.0.0.0', () => {
-    console.log(`\n🚀 Nexa server running on http://0.0.0.0:${PORT}`);
-    console.log(`   WebSocket: ws://0.0.0.0:${PORT}/ws`);
+    const actualPort = server.address().port;
+    console.log(`\n🚀 Nexa server running on http://0.0.0.0:${actualPort}`);
+    console.log(`   WebSocket: ws://0.0.0.0:${actualPort}/ws`);
     console.log(`   Web UI:    ${webDist} (run 'npm run build --prefix web' first)\n`);
   });
 }

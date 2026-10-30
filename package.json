@@ -4,11 +4,12 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "install:all": "npm install --prefix server && npm install --prefix web",
+    "install:all": "npm ci --prefix server && npm ci --prefix web",
     "dev": "concurrently -n api,web -c blue,magenta \"npm:dev --prefix server\" \"npm:dev --prefix web\"",
     "build": "npm run build --prefix web",
     "start": "npm start --prefix server",
-    "db:init": "npm run db:init --prefix server"
+    "db:init": "npm run db:init --prefix server",
+    "test": "npm test --prefix server && npm test --prefix web"
   },
   "devDependencies": {
     "concurrently": "^9.0.1"

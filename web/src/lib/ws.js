@@ -8,35 +8,45 @@ export class RealtimeClient {
     this.subscribed = new Set();
     this.authed = false;
     this.queue = [];
+    this.closedByUser = false;
   }
 
   connect() {
+    this.closedByUser = false;
     if (this.ws && this.ws.readyState <= 1) return;
     const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-    const url = `${proto}://${location.host}/ws`;
-    this.ws = new WebSocket(url);
-    this.ws.onopen = () => {
-      this.authed = false;
+    const ws = new WebSocket(`${proto}://${location.host}/ws`);
+    this.ws = ws;
+    ws.onopen = () => {
       const token = getToken();
-      if (token) this.send({ type: 'auth', token });
-      // re-subscribe
-      for (const ch of this.subscribed) this.send({ type: 'subscribe', channel: ch });
-      // flush queue
-      while (this.queue.length) this.send(this.queue.shift());
-      this.emit('open');
+      if (this.closedByUser || !token) return ws.close();
+      // Wait for auth:ok before sending subscriptions or queued actions.
+      ws.send(JSON.stringify({ type: 'auth', token }));
     };
-    this.ws.onmessage = (ev) => {
+    ws.onmessage = (ev) => {
       let msg; try { msg = JSON.parse(ev.data); } catch { return; }
+      if (msg.type === 'auth:ok') {
+        this.authed = true;
+        for (const channel of this.subscribed) this.sendNow({ type: 'subscribe', channel });
+        for (const queued of this.queue.splice(0)) this.sendNow(queued);
+      } else if (msg.type === 'auth:error') {
+        this.queue = [];
+      }
       this.emit(msg.type, msg);
       this.emit('*', msg);
     };
-    this.ws.onclose = () => {
+    ws.onclose = (event) => {
+      if (this.ws !== ws) return;
+      this.ws = null;
       this.authed = false;
-      this.emit('close');
+      this.emit('close', event);
       clearTimeout(this.reconnectTimer);
-      this.reconnectTimer = setTimeout(() => this.connect(), 1500);
+      // Invalid/expired sessions do not reconnect forever.
+      if (!this.closedByUser && event.code !== 4001 && getToken()) {
+        this.reconnectTimer = setTimeout(() => this.connect(), 1500);
+      }
     };
-    this.ws.onerror = () => { this.ws.close(); };
+    ws.onerror = () => ws.close();
   }
 
   on(type, fn) {
@@ -44,36 +54,36 @@ export class RealtimeClient {
     this.handlers.get(type).add(fn);
     return () => this.off(type, fn);
   }
-  off(type, fn) {
-    const s = this.handlers.get(type);
-    if (s) s.delete(fn);
-  }
-  emit(type, data) {
-    const s = this.handlers.get(type);
-    if (s) s.forEach(fn => fn(data));
-  }
+  off(type, fn) { this.handlers.get(type)?.delete(fn); }
+  emit(type, data) { this.handlers.get(type)?.forEach(fn => fn(data)); }
 
+  sendNow(msg) {
+    if (this.ws?.readyState === WebSocket.OPEN) this.ws.send(JSON.stringify(msg));
+  }
   send(msg) {
-    if (!this.ws || this.ws.readyState !== 1) {
-      this.queue.push(msg); return;
-    }
-    this.ws.send(JSON.stringify(msg));
+    if (!this.authed || !this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      this.queue.push(msg);
+    } else this.sendNow(msg);
   }
-
-  auth(token) { this.send({ type: 'auth', token }); }
   subscribe(channel) {
+    if (this.subscribed.has(channel)) return;
     this.subscribed.add(channel);
-    this.send({ type: 'subscribe', channel });
+    if (this.authed) this.sendNow({ type: 'subscribe', channel });
   }
   unsubscribe(channel) {
     this.subscribed.delete(channel);
-    this.send({ type: 'unsubscribe', channel });
+    if (this.authed) this.sendNow({ type: 'unsubscribe', channel });
   }
-  sendChat(channel, text, replyTo) {
-    this.send({ type: 'chat:send', channel, text, replyTo });
-  }
+  sendChat(channel, text, replyTo) { this.send({ type: 'chat:send', channel, text, replyTo }); }
   typing(channel, isTyping) { this.send({ type: 'typing', channel, isTyping }); }
-  close() { this.ws && this.ws.close(); }
+  close() {
+    this.closedByUser = true;
+    clearTimeout(this.reconnectTimer);
+    this.queue = [];
+    this.subscribed.clear();
+    this.authed = false;
+    if (this.ws) this.ws.close();
+  }
 }
 
 export const rt = new RealtimeClient();

@@ -1,41 +1,38 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from '../lib/api.js';
 import { Icon } from '../components/Icons.jsx';
-import { Avatar } from './Dashboard.jsx';
 import { useApp } from '../App.jsx';
 import { formatBytes, formatRelative } from '../lib/util.js';
 import FileDropZone from '../components/FileDropZone.jsx';
 
 export default function Home() {
-  const { user, setPage, setActiveProjectId } = useApp();
+  const { user, setPage, toast, rt, can } = useApp();
   const [stats, setStats] = useState({ projects: 0, tasks: 0, myTasks: 0, files: 0, messages: 0 });
-  const [activity, setActivity] = useState([]);
   const [quickFiles, setQuickFiles] = useState([]);
 
+  const loadVersion = useRef(0);
+  const load = useCallback(async () => {
+    const version = ++loadVersion.current;
+    try {
+      const [projects, files] = await Promise.all([api.get('/api/projects'), api.get('/api/files')]);
+      const projectTasks = await Promise.all(projects.projects.map(p => api.get(`/api/projects/${p.id}/tasks`)));
+      if (version !== loadVersion.current) return;
+      const openTasks = projectTasks.flatMap(result => result.tasks).filter(task => task.status !== 'done');
+      setStats({ projects: projects.projects.length, tasks: openTasks.length,
+        myTasks: openTasks.filter(task => task.assigneeId === user.id).length, files: files.files.length, messages: 0 });
+      setQuickFiles(files.files.slice(0, 6));
+    } catch { /* A revocation can invalidate an in-flight project request. */ }
+  }, [user.id, user.role]);
+
   useEffect(() => {
-    (async () => {
-      try {
-        const [projects, files] = await Promise.all([
-          api.get('/api/projects'),
-          api.get('/api/files')
-        ]);
-        let myTasks = 0, totalTasks = 0;
-        for (const p of projects.projects) {
-          const t = await api.get(`/api/projects/${p.id}/tasks`);
-          totalTasks += t.tasks.length;
-          myTasks += t.tasks.filter(tk => tk.assigneeId === user.id && tk.status !== 'done').length;
-        }
-        setStats({
-          projects: projects.projects.length,
-          tasks: totalTasks,
-          myTasks,
-          files: files.files.length,
-          messages: 0
-        });
-        setQuickFiles(files.files.slice(0, 6));
-      } catch {}
-    })();
-  }, [user.id]);
+    load();
+    const removeProject = ev => { setQuickFiles(files => files.filter(f => f.projectId !== ev.projectId)); load(); };
+    const offs = [rt.on('project:access-revoked', removeProject), rt.on('project:delete', removeProject),
+      rt.on('project:create', load), rt.on('project:update', load), rt.on('project:membership-changed', load), rt.on('file:new', load), rt.on('file:delete', load)];
+    return () => { loadVersion.current++; offs.forEach(off => off()); };
+  }, [load, rt]);
+
+  const download = file => api.download(file.id, file.name).catch(e => toast(e.message, 'error'));
 
   const cards = [
     { key: 'chat', label: 'Team chat', desc: 'Jump into the conversation', icon: 'chat', onClick: () => setPage('chat') },
@@ -52,7 +49,7 @@ export default function Home() {
         <div className="mt-4 flex flex-wrap gap-2">
           <button className="btn-primary" onClick={() => setPage('chat')}><Icon name="chat" size={16}/> Open chat</button>
           <button className="btn-outline" onClick={() => setPage('projects')}><Icon name="folder" size={16}/> View projects</button>
-          <button className="btn-outline" onClick={() => setPage('files')}><Icon name="upload" size={16}/> Upload a file</button>
+          {can('files.write') && <button className="btn-outline" onClick={() => setPage('files')}><Icon name="upload" size={16}/> Upload a file</button>}
         </div>
       </div>
 
@@ -81,7 +78,7 @@ export default function Home() {
             </div>
           </div>
 
-          <FileDropZone />
+          {can('files.write') && <FileDropZone />}
         </div>
 
         <div className="card p-5">
@@ -89,7 +86,7 @@ export default function Home() {
           <div className="space-y-2">
             {quickFiles.length === 0 && <div className="text-sm text-muted">No files yet. Upload one to get started.</div>}
             {quickFiles.map(f => (
-              <a key={f.id} href={api.downloadUrl(f.id)} className="flex items-center gap-3 p-2 rounded-lg hover:bg-surface2 transition">
+              <button key={f.id} onClick={() => download(f)} className="w-full text-left flex items-center gap-3 p-2 rounded-lg hover:bg-surface2 transition" aria-label={`Download ${f.name}`}>
                 <div className="w-9 h-9 rounded-lg bg-surface2 flex items-center justify-center">
                   <Icon name={f.mimeType.startsWith('image/') ? 'image' : 'file'} size={18} />
                 </div>
@@ -98,7 +95,7 @@ export default function Home() {
                   <div className="text-xs text-muted">{formatBytes(f.size)} · {formatRelative(f.createdAt)}</div>
                 </div>
                 <Icon name="download" size={16} className="text-muted" />
-              </a>
+              </button>
             ))}
           </div>
         </div>

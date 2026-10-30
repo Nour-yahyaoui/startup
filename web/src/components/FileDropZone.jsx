@@ -39,7 +39,7 @@ export default function FileDropZone({ projectId }) {
           <Icon name="upload" size={22} />
         </div>
         <div className="font-medium">Drop files here or <button className="text-primary hover:underline" onClick={() => inputRef.current?.click()}>browse</button></div>
-        <div className="text-sm text-muted mt-1">Fast uploads · up to 500 MB per file · shared with the whole team</div>
+        <div className="text-sm text-muted mt-1">Fast uploads · up to 500 MB per file · {projectId ? 'visible to project members and workspace admins' : 'visible to the whole workspace'}</div>
         <input ref={inputRef} type="file" multiple className="hidden" onChange={e => handleFiles(e.target.files)} />
       </div>
 

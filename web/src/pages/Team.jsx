@@ -1,36 +1,55 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Icon } from '../components/Icons.jsx';
 import { Avatar } from './Dashboard.jsx';
 import Modal from '../components/Modal.jsx';
 import { api } from '../lib/api.js';
 import { useApp } from '../App.jsx';
-import { formatRelative } from '../lib/util.js';
 
 export default function Team() {
-  const { user, toast, onlineUsers } = useApp();
+  const { user, toast, onlineUsers, rt, can } = useApp();
   const [users, setUsers] = useState([]);
   const [roles, setRoles] = useState([]);
   const [open, setOpen] = useState(false);
   const [editRole, setEditRole] = useState(null);
   const isAdmin = user.role === 'owner' || user.role === 'admin';
+  const canManageMembers = can('members.manage');
+  const loadVersion = useRef(0);
 
-  const load = async () => {
-    const [u, r] = await Promise.all([api.get('/api/users'), api.get('/api/roles')]);
-    setUsers(u.users);
-    setRoles(r.roles);
-  };
-  useEffect(() => { load(); }, []);
+  const load = useCallback(async () => {
+    const version = ++loadVersion.current;
+    try {
+      const [u, r] = await Promise.all([api.get(isAdmin ? '/api/users?includeInactive=true' : '/api/users'), api.get('/api/roles')]);
+      if (version === loadVersion.current) { setUsers(u.users); setRoles(r.roles); }
+    } catch (e) { if (version === loadVersion.current) toast(e.message, 'error'); }
+  }, [isAdmin, toast]);
+  useEffect(() => {
+    load();
+    const offs = ['user:join', 'user:leave', 'user:update'].map(type => rt.on(type, load));
+    return () => { loadVersion.current++; offs.forEach(off => off()); };
+  }, [load, rt]);
 
-  const remove = async (u) => {
-    if (!confirm(`Remove ${u.name} from the team?`)) return;
-    await api.del('/api/users/' + u.id);
-    setUsers(xs => xs.filter(x => x.id !== u.id));
-    toast('Member removed', 'success');
+  const remove = async (member) => {
+    if (!confirm(`Deactivate ${member.name}? They will immediately lose access, but their project history and files will remain.`)) return;
+    try {
+      const result = await api.del('/api/users/' + member.id);
+      setUsers(xs => xs.map(x => x.id === member.id ? result.user : x));
+      toast('Member deactivated', 'success');
+    } catch (e) { toast(e.message, 'error'); }
   };
+  const reactivate = async (member) => {
+    try {
+      const result = await api.post(`/api/users/${member.id}/reactivate`, {});
+      setUsers(xs => xs.map(x => x.id === member.id ? result.user : x));
+      toast('Member reactivated. Add them to projects again as needed.', 'success');
+    } catch (e) { toast(e.message, 'error'); }
+  };
+
   const changeRole = async (u, role) => {
-    await api.patch('/api/users/' + u.id, { role });
-    setUsers(xs => xs.map(x => x.id === u.id ? { ...x, role } : x));
-    toast('Role updated', 'success');
+    try {
+      await api.patch('/api/users/' + u.id, { role });
+      setUsers(xs => xs.map(x => x.id === u.id ? { ...x, role } : x));
+      toast('Role updated', 'success');
+    } catch (e) { toast(e.message, 'error'); }
   };
 
   return (
@@ -38,15 +57,15 @@ export default function Team() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Team</h1>
-          <p className="text-muted text-sm mt-1">{users.length} members · {onlineUsers.size} online now</p>
+          <p className="text-muted text-sm mt-1">{users.filter(u => !u.disabledAt).length} active members · {onlineUsers.size} online now</p>
         </div>
-        {isAdmin && (
-          <button className="btn-primary" onClick={() => setOpen(true)}><Icon name="plus" size={16}/> Invite member</button>
+        {canManageMembers && (
+          <button className="btn-primary" onClick={() => setOpen(true)}><Icon name="plus" size={16}/> Create member</button>
         )}
       </div>
 
-      <div className="card overflow-hidden">
-        <table className="w-full text-sm">
+      <div className="card overflow-x-auto">
+        <table className="w-full min-w-[640px] text-sm">
           <thead>
             <tr className="text-left text-xs uppercase text-muted border-b border-border">
               <th className="px-4 py-3 font-semibold">Member</th>
@@ -73,7 +92,7 @@ export default function Team() {
                     </div>
                   </td>
                   <td className="px-4 py-3">
-                    {isAdmin && u.id !== user.id ? (
+                    {isAdmin && !u.disabledAt && u.id !== user.id ? (
                       <select className="input !py-1 !w-32 capitalize" value={u.role} onChange={e => changeRole(u, e.target.value)}>
                         {roles.map(r => <option key={r.name} value={r.name} className="capitalize">{r.name}</option>)}
                       </select>
@@ -82,11 +101,13 @@ export default function Team() {
                     )}
                   </td>
                   <td className="px-4 py-3">
-                    <span className={`text-xs ${online ? 'text-success' : 'text-muted'}`}>● {online ? 'Online' : 'Offline'}</span>
+                    <span className={`text-xs ${online && !u.disabledAt ? 'text-success' : 'text-muted'}`}>● {u.disabledAt ? 'Deactivated' : online ? 'Online' : 'Offline'}</span>
                   </td>
                   <td className="px-4 py-3 text-right">
-                    {isAdmin && u.id !== user.id && (
-                      <button className="btn-ghost !p-1.5 text-danger" onClick={() => remove(u)} title="Remove"><Icon name="trash" size={16}/></button>
+                    {canManageMembers && u.id !== user.id && (isAdmin || !['owner', 'admin'].includes(u.role)) && (
+                      u.disabledAt
+                        ? (isAdmin && <button className="btn-outline !text-xs" onClick={() => reactivate(u)}>Reactivate</button>)
+                        : <button className="btn-ghost !p-1.5 text-danger" onClick={() => remove(u)} title="Deactivate member" aria-label={`Deactivate ${u.name}`}><Icon name="trash" size={16}/></button>
                     )}
                   </td>
                 </tr>
@@ -107,11 +128,10 @@ export default function Team() {
               <div key={r.name} className="p-3 rounded-lg border border-border">
                 <div className="flex items-center justify-between">
                   <div className="font-medium capitalize">{r.name}</div>
-                  <button className="btn-ghost !p-1.5" onClick={() => setEditRole(r)}><Icon name="edit" size={14}/></button>
+                  {!['owner', 'admin'].includes(r.name) && <button className="btn-ghost !p-1.5" onClick={() => setEditRole(r)} aria-label={`Edit ${r.name} role`}><Icon name="edit" size={14}/></button>}
                 </div>
                 <div className="flex flex-wrap gap-1 mt-2">
                   {(JSON.parse(r.permissions || '[]')).map(p => <span key={p} className="chip !py-0 text-[11px]">{p}</span>)}
-                  {r.permissions === '["*"]' || r.permissions === '[\"*\"]' && <span className="chip !py-0 text-[11px]">Full access</span>}
                   {r.permissions === '[]' && <span className="text-xs text-muted">No permissions</span>}
                 </div>
               </div>
@@ -120,7 +140,7 @@ export default function Team() {
         </div>
       )}
 
-      <InviteModal open={open} onClose={() => setOpen(false)} roles={roles} onCreated={load} />
+      <InviteModal open={open} onClose={() => setOpen(false)} roles={roles.filter(r => isAdmin || r.name === 'employee')} onCreated={load} />
       <RoleModal open={!!editRole} role={editRole} onClose={() => setEditRole(null)} onSaved={() => { setEditRole(null); load(); toast('Role saved', 'success'); }}/>
     </div>
   );
@@ -128,18 +148,27 @@ export default function Team() {
 
 function InviteModal({ open, onClose, roles, onCreated }) {
   const [form, setForm] = useState({ name: '', email: '', password: '', role: 'employee' });
+  const [error, setError] = useState('');
+  const [saving, setSaving] = useState(false);
+  useEffect(() => { if (open) setError(''); }, [open]);
   const submit = async (e) => {
     e.preventDefault();
-    await api.post('/api/users', form);
-    setForm({ name: '', email: '', password: '', role: 'employee' });
-    onCreated(); onClose();
+    setError(''); setSaving(true);
+    try {
+      await api.post('/api/users', form);
+      setForm({ name: '', email: '', password: '', role: 'employee' });
+      onCreated(); onClose();
+    } catch (e) { setError(e.message); }
+    finally { setSaving(false); }
   };
   return (
-    <Modal open={open} onClose={onClose} title="Invite team member">
+    <Modal open={open} onClose={onClose} title="Create team member">
       <form onSubmit={submit} className="space-y-4">
         <input className="input" placeholder="Full name" value={form.name} onChange={e => setForm({...form, name: e.target.value})} required autoFocus/>
         <input type="email" className="input" placeholder="Email" value={form.email} onChange={e => setForm({...form, email: e.target.value})} required/>
-        <input type="password" className="input" placeholder="Temporary password (min 6 chars)" value={form.password} onChange={e => setForm({...form, password: e.target.value})} required minLength={6}/>
+        <input type="password" className="input" placeholder="Initial password (min 6 chars)" value={form.password} onChange={e => setForm({...form, password: e.target.value})} required minLength={6}/>
+        <p className="text-xs text-muted">Share this password securely. The creator knows it, and members cannot change it yet.</p>
+        {error && <p role="alert" className="text-sm text-danger">{error}</p>}
         <div>
           <label className="text-sm text-muted mb-1 block">Role</label>
           <select className="input capitalize" value={form.role} onChange={e => setForm({...form, role: e.target.value})}>
@@ -148,7 +177,7 @@ function InviteModal({ open, onClose, roles, onCreated }) {
         </div>
         <div className="flex justify-end gap-2 pt-2">
           <button type="button" className="btn-outline" onClick={onClose}>Cancel</button>
-          <button className="btn-primary">Create member</button>
+          <button className="btn-primary" disabled={saving}>{saving ? 'Creating…' : 'Create member'}</button>
         </div>
       </form>
     </Modal>
@@ -161,8 +190,10 @@ function RoleModal({ open, role, onClose, onSaved }) {
   const [name, setName] = useState('');
   const [perms, setPerms] = useState([]);
   const [isNew, setIsNew] = useState(true);
+  const [error, setError] = useState('');
   useEffect(() => {
     if (role) {
+      setError('');
       setName(role.name || '');
       try {
         const p = JSON.parse(role.permissions || '[]');
@@ -174,21 +205,24 @@ function RoleModal({ open, role, onClose, onSaved }) {
   const save = async (e) => {
     e.preventDefault();
     if (!name.trim()) return;
-    if (isNew) await api.post('/api/roles', { name, permissions: perms });
-    else await api.patch('/api/roles/' + name, { permissions: perms });
-    onSaved();
+    try {
+      if (isNew) await api.post('/api/roles', { name, permissions: perms });
+      else await api.patch('/api/roles/' + name, { permissions: perms });
+      onSaved();
+    } catch (e) { setError(e.message); }
   };
   const toggle = (p) => setPerms(xs => xs.includes(p) ? xs.filter(x => x !== p) : [...xs, p]);
   const canDelete = !['owner','admin','manager','employee','viewer'].includes(name);
   const del = async () => {
     if (!canDelete) return;
     if (!confirm('Delete this role?')) return;
-    await api.del('/api/roles/' + name);
-    onSaved();
+    try { await api.del('/api/roles/' + name); onSaved(); }
+    catch (e) { setError(e.message); }
   };
   return (
     <Modal open={open} onClose={onClose} title={isNew ? 'New role' : `Edit role: ${name}`}>
       <form onSubmit={save} className="space-y-4">
+        {error && <p role="alert" className="text-sm text-danger">{error}</p>}
         <div>
           <label className="text-sm text-muted mb-1 block">Role name</label>
           <input className="input" value={name} onChange={e => setName(e.target.value)} disabled={!isNew} required placeholder="e.g. designer"/>

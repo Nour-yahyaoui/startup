@@ -1,7 +1,12 @@
 import { registerUser, loginUser, signToken } from '../auth.js';
 import { publicUser } from '../hub.js';
+import { get } from '../db/index.js';
 
 export async function authRoutes(app) {
+  app.get('/api/auth/bootstrap', async () => ({
+    registrationOpen: get('SELECT COUNT(*) as c FROM users').c === 0
+  }));
+
   app.post('/api/auth/register', async (req, reply) => {
     const { email, name, password } = req.body || {};
     try {
@@ -9,7 +14,7 @@ export async function authRoutes(app) {
       const token = signToken(user);
       reply.send({ token, user: publicUser(user) });
     } catch (e) {
-      reply.code(400).send({ error: e.message });
+      reply.code(e.statusCode || 400).send({ error: e.message });
     }
   });
 

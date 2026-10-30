@@ -1,12 +1,13 @@
 import { all, get, run } from '../db/index.js';
-import { publicUser } from '../hub.js';
+import { canAccessChannel } from '../access.js';
 
 export async function chatRoutes(app) {
   const auth = app.authenticate;
 
-  app.get('/api/messages', { preHandler: [auth] }, async (req) => {
-    const channel = (req.query.channel || 'global').toString();
-    const n = Math.min(parseInt(req.query.limit || '100', 10) || 100, 500);
+  app.get('/api/messages', { preHandler: [auth] }, async (req, reply) => {
+    const channel = req.query.channel || 'global';
+    if (!canAccessChannel(req.user, channel)) return reply.code(404).send({ error: 'Channel not found' });
+    const n = Math.max(1, Math.min(parseInt(req.query.limit || '100', 10) || 100, 500));
     const before = req.query.before ? parseInt(req.query.before, 10) : null;
     let rows;
     if (before && !Number.isNaN(before)) {

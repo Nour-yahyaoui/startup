@@ -1,4 +1,4 @@
-import React, { useEffect, useState, createContext, useContext, useCallback } from 'react';
+import React, { useEffect, useRef, useState, createContext, useContext, useCallback } from 'react';
 import Login from './pages/Login.jsx';
 import Dashboard from './pages/Dashboard.jsx';
 import { api, getToken, clearToken, setToken, getStoredUser, setStoredUser, clearStoredUser } from './lib/api.js';
@@ -16,8 +16,10 @@ export default function App() {
   const [activeChannel, setActiveChannel] = useState('global');
   const [toasts, setToasts] = useState([]);
   const [notifications, setNotifications] = useState([]);
-  const [unreadCount, setUnreadCount] = useState(0);
+  const unreadCount = notifications.filter(n => !n.read).length;
+  const notificationsVersion = useRef(0);
   const [onlineUsers, setOnlineUsers] = useState(new Map());
+  const [permissions, setPermissions] = useState([]);
 
   // Apply theme
   useEffect(() => {
@@ -57,9 +59,8 @@ export default function App() {
     rt.connect();
     const off1 = rt.on('auth:ok', () => { rt.subscribe('global'); });
     const off2 = rt.on('notification', (ev) => {
-      const n = { id: ev.notification.id, kind: ev.notification.type, title: ev.notification.title, body: ev.notification.body, createdAt: ev.notification.createdAt, read: false };
+      const n = { id: ev.notification.id, kind: ev.notification.type, title: ev.notification.title, body: ev.notification.body, createdAt: ev.notification.createdAt, projectId: ev.notification.projectId, read: false };
       setNotifications(ns => [n, ...ns].slice(0, 100));
-      setUnreadCount(c => c + 1);
       toast(n.title, 'info');
     });
     const off3 = rt.on('presence', (ev) => {
@@ -77,16 +78,76 @@ export default function App() {
     const off5 = rt.on('user:join', (ev) => toast(`${ev.user.name} joined the team`, 'success'));
     const off6 = rt.on('file:new', (ev) => toast(`${ev.uploader.name} uploaded ${ev.file.name}`, 'info'));
     const off7 = rt.on('project:create', () => toast('New project created', 'success'));
-    return () => { off1(); off2(); off3(); off4(); off5(); off6(); off7(); };
+    const off8 = rt.on('user:update', (ev) => {
+      if (ev.user.id !== user.id) return;
+      setStoredUser(ev.user);
+      setUser(ev.user);
+      if (ev.user.role !== user.role) {
+        notificationsVersion.current++;
+        setNotifications(ns => ns.filter(n => !n.projectId));
+        setPage('home'); setActiveProjectId(null); setActiveChannel('global');
+        toast('Your workspace role has changed', 'info');
+      }
+    });
+    const off9 = rt.on('error', ev => toast(ev.message || 'Realtime request failed', 'error'));
+    const off10 = rt.on('close', ev => {
+      if (ev.code !== 4001) return;
+      clearToken(); clearStoredUser(); setUser(null); rt.close();
+      notificationsVersion.current++; setNotifications([]); setOnlineUsers(new Map());
+      setPage('home'); setActiveProjectId(null); setActiveChannel('global');
+      toast('Your session ended. Please sign in again.', 'info');
+    });
+    return () => { off1(); off2(); off3(); off4(); off5(); off6(); off7(); off8(); off9(); off10(); };
   }, [user, toast]);
+
+  // A membership change takes effect immediately, including in open views.
+  useEffect(() => {
+    if (!user) return;
+    const leaveProject = ({ projectId }) => {
+      rt.unsubscribe('project:' + projectId);
+      if (activeProjectId === projectId) {
+        setActiveProjectId(null); setPage('projects');
+        toast('This project is no longer available to you.', 'info');
+      }
+      if (activeChannel === 'project:' + projectId) setActiveChannel('global');
+      notificationsVersion.current++;
+      setNotifications(ns => ns.filter(n => n.projectId !== projectId));
+    };
+    const off1 = rt.on('project:access-revoked', leaveProject);
+    const off2 = rt.on('project:delete', leaveProject);
+    return () => { off1(); off2(); };
+  }, [user, activeProjectId, activeChannel, toast]);
+
+  // The server remains authoritative; these permissions only tailor controls in the UI.
+  useEffect(() => {
+    if (!user) { setPermissions([]); return; }
+    let active = true;
+    const loadPermissions = async () => {
+      try {
+        const { roles } = await api.get('/api/roles');
+        const found = roles.find(role => role.name === user.role);
+        const parsed = JSON.parse(found?.permissions || '[]');
+        if (active) setPermissions(Array.isArray(parsed) ? parsed : []);
+      } catch { if (active) setPermissions([]); }
+    };
+    loadPermissions();
+    const off = rt.on('role:update', ev => { if (ev.name === user.role) loadPermissions(); });
+    return () => { active = false; off(); };
+  }, [user?.id, user?.role]);
 
   // Fetch notifications on auth
   useEffect(() => {
     if (!user) return;
+    const version = ++notificationsVersion.current;
     api.get('/api/notifications').then(n => {
-      setNotifications(n.notifications.map(x => ({ ...x, read: !!x.readAt, kind: x.type, title: x.payload.title || x.type, body: x.payload.body || '' })));
-      setUnreadCount(n.notifications.filter(x => !x.readAt).length);
+      if (version !== notificationsVersion.current) return;
+      const stored = n.notifications.map(x => ({ ...x, projectId: x.payload.projectId, read: !!x.readAt, kind: x.type, title: x.payload.title || x.type, body: x.payload.body || '' }));
+      setNotifications(current => {
+        const merged = new Map([...stored, ...current].map(item => [item.id, item]));
+        return [...merged.values()].sort((a, b) => b.createdAt - a.createdAt).slice(0, 100);
+      });
     }).catch(()=>{});
+    return () => { notificationsVersion.current++; };
   }, [user]);
 
   const login = async (email, password) => {
@@ -100,23 +161,24 @@ export default function App() {
   const logout = () => {
     clearToken(); clearStoredUser(); setUser(null);
     rt.close();
+    notificationsVersion.current++; setNotifications([]); setOnlineUsers(new Map());
     setPage('home'); setActiveChannel('global'); setActiveProjectId(null);
   };
 
   const markAllRead = async () => {
     await api.post('/api/notifications/read-all', {});
     setNotifications(ns => ns.map(n => ({ ...n, read: true })));
-    setUnreadCount(0);
   };
 
   const ctx = {
     user, login, register, logout, ready,
+    can: permission => user?.role === 'owner' || user?.role === 'admin' || permissions.includes('*') || permissions.includes(permission),
     theme, toggleTheme,
     page, setPage,
     activeProjectId, setActiveProjectId,
     activeChannel, setActiveChannel,
     toasts, toast,
-    notifications, setNotifications, unreadCount, setUnreadCount, markAllRead,
+    notifications, setNotifications, unreadCount, markAllRead,
     onlineUsers, rt
   };
 
