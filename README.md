@@ -1,9 +1,20 @@
-# Nexa ⚡ — Realtime Workspace for Companies
+# Teamroom — Realtime Workspace for Companies
 
 A production-grade, fully-realtime team collaboration platform:
 fast file transfer, WhatsApp-style team chat, projects & kanban tasks, role-based access, presence & live notifications — all updating instantly over WebSockets.
 
 > Vercel-inspired dark/light theme · Hand-rolled SVG icon system (no icon fonts, no hardcoded CDNs) · Mobile-ready layout · JWT auth · SQLite persistence · Drag-and-drop uploads
+
+## 🌐 Live demo
+
+| Environment | URL |
+|---|---|
+| **Production (Vercel)** | https://startup-mb.vercel.app |
+| Local dev | http://localhost:5173 |
+
+The landing page lives at `/`; open **Create your workspace** to register — the first account on any fresh deployment automatically becomes the **Owner**.
+
+> **Deploy note:** On Vercel (serverless), realtime runs over an automatic HTTP long-polling fallback (`/api/poll`) since WebSockets aren't supported there. Self-hosted (`npm start`) uses native WebSockets for sub-millisecond updates. The SQLite DB and uploads live in `/tmp` on Vercel (ephemeral) and in `data/` + `uploads/` when self-hosted (persistent).
 
 ## Features
 
@@ -42,11 +53,23 @@ npm run dev
 Then open **http://localhost:5173** and create your first account — it becomes
 the workspace **Owner**. Invite teammates from the Team page.
 
-### Production
+### Production (self-host)
 
 ```bash
 npm run build   # compiles frontend into web/dist
-npm start       # serves API + built frontend from :8787
+npm start       # serves API + built frontend + WebSockets from :8787
+```
+
+### Deploy to Vercel
+
+The repo ships with `vercel.json` and a serverless entrypoint (`api/index.js`):
+
+```bash
+vercel --prod   # or connect the repo in the Vercel dashboard
+```
+
+- Static SPA is served from `web/dist`; `/api/*` maps to the Fastify-based lambda.
+- Realtime uses the `/api/poll` long-poll fallback automatically (no WS on serverless).
 ```
 
 ## Project layout

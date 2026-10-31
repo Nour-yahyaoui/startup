@@ -1,0 +1,255 @@
+/* Teamroom landing — "Dispatch Board" design language (docs/STYLE.md).
+   Scoped under .lb — the app keeps its own token system untouched.
+   Mobile-first: base rules are 320px; min-width queries only add. */
+
+.lb {
+  /* tokens */
+  --lb-panel: #0A0A0A;
+  --lb-ink: #EDEDED;
+  --lb-mute: #6E6E6E;
+  --lb-rule: #242424;
+  --lb-row: #111111;
+  --lb-accent: #3DDC97;
+  --lb-amber: #A9701A;
+  --lb-red: #C4340B;
+  --lb-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  --lb-body: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+
+  background: var(--lb-panel);
+  color: var(--lb-ink);
+  font-family: var(--lb-body);
+  font-size: 16px;
+  line-height: 1.65;
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* craft: selection + focus (frontend-craft / distinctive-visual-style) */
+.lb ::selection { background: var(--lb-accent); color: var(--lb-panel); }
+.lb :focus-visible { outline: 2px solid var(--lb-accent); outline-offset: 2px; }
+
+/* ---------------- nav ---------------- */
+.lb-nav {
+  position: sticky; top: 0; z-index: 40;
+  background: rgba(10,10,10,.92);
+  border-bottom: 1px solid var(--lb-rule);
+  backdrop-filter: blur(6px);
+}
+.lb-nav-in {
+  max-width: 1120px; margin: 0 auto;
+  padding: 0 20px; height: 56px;
+  display: flex; align-items: center; justify-content: space-between; gap: 16px;
+}
+.lb-brand { display: flex; align-items: center; gap: 9px; text-decoration: none; color: var(--lb-ink); }
+.lb-brand-mark {
+  width: 22px; height: 22px; display: grid; place-items: center;
+  border: 1px solid var(--lb-rule); border-radius: 2px; color: var(--lb-accent);
+}
+.lb-brand-name {
+  font-family: var(--lb-mono); font-size: 13px; font-weight: 500;
+  letter-spacing: 0.22em;
+}
+.lb-nav-links { display: none; gap: 22px; }
+.lb-nav-links a {
+  font-family: var(--lb-mono); font-size: 11px; letter-spacing: 0.12em;
+  text-transform: uppercase; color: var(--lb-mute); text-decoration: none;
+  padding: 4px 0; border-bottom: 1px solid transparent;
+}
+.lb-nav-links a:hover { color: var(--lb-ink); border-bottom-color: var(--lb-accent); }
+.lb-nav-cta { display: flex; gap: 8px; }
+
+/* ---------------- buttons ---------------- */
+.lb-btn {
+  font-family: var(--lb-mono); font-size: 12px; letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 9px 16px; min-height: 44px;
+  border-radius: 2px; border: 1px solid var(--lb-rule);
+  background: transparent; color: var(--lb-ink);
+  cursor: pointer; transition: background 150ms ease-out, color 150ms ease-out, border-color 150ms ease-out;
+}
+.lb-btn:hover { border-color: var(--lb-mute); }
+.lb-btn:active { transform: translateY(1px); }
+.lb-btn-accent { border-color: var(--lb-accent); color: var(--lb-accent); }
+.lb-btn-accent:hover { background: var(--lb-accent); color: var(--lb-panel); }
+.lb-btn-ghost { border-color: var(--lb-rule); color: var(--lb-ink); }
+.lb-btn-lg { padding: 12px 22px; }
+.lb-btn-block { width: 100%; }
+
+/* ---------------- section grid: rail + content ---------------- */
+.lb-section, .lb-mast, .lb-footer {
+  max-width: 1120px; margin: 0 auto;
+  padding: 56px 20px;
+  border-bottom: 1px solid var(--lb-rule);
+  display: grid; grid-template-columns: 1fr; gap: 18px;
+}
+.lb-rail {
+  display: flex; align-items: baseline; gap: 12px;
+  border-top: 1px solid var(--lb-rule); padding-top: 10px;
+}
+.lb-rail-num { font-family: var(--lb-mono); font-size: 11px; color: var(--lb-mute); }
+.lb-rail-label {
+  font-family: var(--lb-mono); font-size: 11px; letter-spacing: 0.14em;
+  text-transform: uppercase; color: var(--lb-mute);
+}
+
+/* ---------------- type scale (40/24/17/14/11 — hierarchy from scale) ---------------- */
+.lb-h1 {
+  font-family: var(--lb-mono); font-weight: 500;
+  font-size: clamp(27px, 6vw, 40px);
+  line-height: 1.15; letter-spacing: -0.01em;
+  margin: 0 0 18px; max-width: 21ch;
+}
+.lb-h2 {
+  font-family: var(--lb-mono); font-weight: 500;
+  font-size: 24px; line-height: 1.25; letter-spacing: -0.01em;
+  margin: 0 0 10px;
+}
+.lb-h3 { font-family: var(--lb-mono); font-weight: 500; font-size: 17px; margin: 0 0 8px; }
+.lb-lead { font-size: 17px; line-height: 1.65; color: var(--lb-ink); max-width: 56ch; margin: 0 0 26px; }
+.lb-p { font-size: 15px; line-height: 1.7; color: var(--lb-ink); max-width: 62ch; margin: 0 0 14px; }
+.lb-note, .lb-fineprint { font-size: 13px; color: var(--lb-mute); }
+.lb-fineprint { margin: 12px 0 0; line-height: 1.6; }
+
+.lb-mast-actions { display: flex; flex-wrap: wrap; gap: 10px; margin: 0 0 14px; }
+
+/* ---------------- tables (the board's native form) ---------------- */
+.lb-table {
+  width: 100%; border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+  font-size: 14px; text-align: left;
+}
+.lb-table th {
+  font-family: var(--lb-mono); font-size: 11px; font-weight: 500;
+  letter-spacing: 0.12em; text-transform: uppercase; color: var(--lb-mute);
+  border-bottom: 1px solid var(--lb-rule);
+  padding: 8px 12px 8px 0; white-space: nowrap;
+}
+.lb-table td { border-bottom: 1px solid var(--lb-rule); padding: 10px 12px 10px 0; vertical-align: top; }
+.lb-table tbody tr:nth-child(even) { background: var(--lb-row); }
+.lb-table tbody tr { transition: background 120ms ease-out; }
+.lb-table tbody tr:hover { background: #161616; }
+.lb-num { font-family: var(--lb-mono); font-size: 12px; color: var(--lb-mute); white-space: nowrap; }
+.lb-th-note { width: 34%; }
+
+/* spec index */
+.lb-spec-grid { display: grid; grid-template-columns: 1fr; gap: 28px; margin-top: 8px; }
+.lb-spec-label { font-family: var(--lb-mono); font-size: 12px; letter-spacing: 0.08em; white-space: nowrap; }
+.lb-spec-value { font-family: var(--lb-mono); font-size: 14px; color: var(--lb-ink); white-space: nowrap; }
+
+/* ---------------- live probe (signature) ---------------- */
+.lb-probe { border: 1px solid var(--lb-rule); border-radius: 2px; align-self: start; }
+.lb-probe-head {
+  display: flex; align-items: center; gap: 9px;
+  padding: 10px 12px; border-bottom: 1px solid var(--lb-rule);
+}
+.lb-probe-title {
+  font-family: var(--lb-mono); font-size: 11px; letter-spacing: 0.1em;
+  text-transform: uppercase; color: var(--lb-mute);
+}
+.lb-probe-status {
+  margin-left: auto; font-family: var(--lb-mono); font-size: 11px;
+  letter-spacing: 0.12em; color: var(--lb-mute);
+}
+.lb-probe-status.is-live { color: var(--lb-accent); }
+.lb-probe .lb-table td, .lb-probe .lb-table th { padding-left: 12px; }
+.lb-probe .lb-table td:last-child, .lb-probe .lb-table th:last-child { padding-right: 12px; }
+.lb-probe-ms { font-family: var(--lb-mono); font-size: 13px; color: var(--lb-accent); }
+.lb-probe-err { font-family: var(--lb-mono); font-size: 13px; color: var(--lb-red); }
+.lb-probe-note { padding: 10px 12px; margin: 0; font-size: 12px; color: var(--lb-mute); border-top: 1px solid var(--lb-rule); }
+
+.lb-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex: none; }
+.lb-dot-live { background: var(--lb-accent); animation: lb-pulse 2s ease-out infinite; }
+.lb-dot-wait { background: var(--lb-amber); }
+.lb-dot-dead { background: var(--lb-red); }
+@keyframes lb-pulse { 0% { box-shadow: 0 0 0 0 rgba(61,220,151,.45); } 100% { box-shadow: 0 0 0 7px rgba(61,220,151,0); } }
+@media (prefers-reduced-motion: reduce) { .lb-dot-live { animation: none; } .lb * { transition: none !important; } }
+
+/* ---------------- pillars ---------------- */
+.lb-pillar { display: grid; grid-template-columns: 1fr; gap: 6px; padding: 26px 0; position: relative; }
+.lb-pillar:first-child { padding-top: 4px; }
+.lb-pillar-num { font-family: var(--lb-mono); font-size: 12px; color: var(--lb-mute); }
+.lb-list { margin: 4px 0 0; padding: 0; list-style: none; }
+.lb-list li {
+  font-size: 14px; color: var(--lb-mute);
+  padding: 6px 0 6px 18px; position: relative;
+  border-bottom: 1px solid var(--lb-rule); max-width: 520px;
+}
+.lb-list li::before { content: "—"; position: absolute; left: 0; color: var(--lb-accent); }
+.lb-rule { display: none; }
+
+/* ---------------- feed ---------------- */
+.lb-feed-who { font-family: var(--lb-mono); font-size: 13px; white-space: nowrap; }
+
+/* ---------------- pricing ---------------- */
+.lb-price-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.lb-price-table { min-width: 640px; }
+.lb-th-plan { visibility: hidden; }
+.lb-price-num { font-family: var(--lb-mono); font-size: 20px; white-space: nowrap; }
+.lb-price-num-accent { color: var(--lb-accent); }
+.lb-price-unit { font-size: 11px; color: var(--lb-mute); margin-left: 6px; letter-spacing: 0.04em; }
+.lb-price-cell-featured { background: var(--lb-row); }
+.lb-price-table .lb-btn { min-height: 38px; padding: 7px 10px; }
+
+/* ---------------- faq ---------------- */
+.lb-faq { border-top: 1px solid var(--lb-rule); }
+.lb-faq-item { border-bottom: 1px solid var(--lb-rule); }
+.lb-faq-q {
+  width: 100%; display: flex; align-items: baseline; gap: 14px;
+  background: none; border: 0; color: var(--lb-ink);
+  font-family: var(--lb-body); font-size: 16px;
+  text-align: left; padding: 16px 0; cursor: pointer;
+}
+.lb-faq-q:hover { color: var(--lb-accent); }
+.lb-faq-n { flex: none; }
+.lb-faq-x { margin-left: auto; font-family: var(--lb-mono); color: var(--lb-mute); flex: none; }
+.lb-faq-a { margin: 0 0 16px; padding-left: 40px; font-size: 15px; color: var(--lb-ink); max-width: 60ch; }
+
+/* ---------------- footer ---------------- */
+.lb-footer-actions { margin: 4px 0 28px; }
+.lb-footer-meta td { font-size: 13px; }
+.lb-footer-meta .lb-note { white-space: nowrap; padding-right: 18px; }
+
+/* ================= min-width: 640px (tablet) ================= */
+@media (min-width: 640px) {
+  .lb-section, .lb-mast, .lb-footer {
+    grid-template-columns: 150px 1fr; gap: 28px; padding: 72px 28px;
+  }
+  .lb-rail {
+    flex-direction: column; gap: 3px; align-items: flex-end;
+    border-top: 0; padding: 5px 0 0;
+    border-right: 1px solid var(--lb-rule); padding-right: 18px;
+    align-self: stretch; text-align: right;
+  }
+  .lb-spec-grid { grid-template-columns: 1.4fr 1fr; }
+  .lb-pillar { grid-template-columns: 90px 1fr; gap: 20px; }
+  .lb-pillar-num { text-align: right; padding-top: 3px; }
+}
+
+/* ================= min-width: 900px (desktop) ================= */
+@media (min-width: 900px) {
+  .lb-nav-links { display: flex; }
+  .lb-section, .lb-mast, .lb-footer { grid-template-columns: 190px 1fr; gap: 40px; }
+  .lb-mast { padding-top: 96px; padding-bottom: 96px; }
+  .lb-h1 { font-size: 40px; }
+  .lb-rule { display: block; position: absolute; left: 90px; right: 0; bottom: 0; border-bottom: 1px solid var(--lb-rule); }
+  .lb-feed-table, .lb-spec-table { font-size: 14px; }
+}
+
+/* ================= print (never look broken) ================= */
+@media print {
+  .lb { background: #fff; color: #000; }
+  .lb-nav, .lb-mast-actions, .lb-footer-actions, .lb-probe-note { display: none; }
+  .lb-table tbody tr:nth-child(even), .lb-price-cell-featured { background: #fff; }
+  .lb-section, .lb-mast, .lb-footer { border-bottom: 1px solid #ccc; padding: 24px 0; }
+  .lb-rail-label, .lb-note, .lb-fineprint, .lb-num { color: #444; }
+  .lb-btn { border: 1px solid #000; color: #000; }
+}
+
+/* ---------------- download section ---------------- */
+.lb-dl-table .lb-cmd {
+  font-family: var(--lb-mono); font-size: 13px; color: var(--lb-ink);
+  white-space: nowrap; overflow-x: auto;
+}
+.lb-cmd a, .lb-footer-meta a, .lb-probe-note a { color: var(--lb-accent); text-decoration: none; border-bottom: 1px solid var(--lb-rule); }
+.lb-cmd a:hover, .lb-footer-meta a:hover { border-bottom-color: var(--lb-accent); }
+.lb-cmd-inline { font-family: var(--lb-mono); font-size: 12px; background: var(--lb-row); border: 1px solid var(--lb-rule); border-radius: 2px; padding: 1px 6px; }

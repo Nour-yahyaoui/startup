@@ -8,3 +8,4 @@ uploads/*
 .DS_Store
 *.log
 server/package-lock.json
+!api/

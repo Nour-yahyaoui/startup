@@ -41,7 +41,7 @@ export default function Sidebar() {
           <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-primary to-accent flex items-center justify-center text-white">
             <Icon name="logo" size={16} />
           </div>
-          {!collapsed && <span className="font-semibold tracking-tight">Nexa</span>}
+          {!collapsed && <span className="font-semibold tracking-tight">Teamroom</span>}
         </div>
         {!collapsed && (
           <button className="btn-ghost !p-1.5" onClick={() => setCollapsed(true)} title="Collapse">

@@ -5,17 +5,45 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const DATA_DIR = path.resolve(__dirname, '../../../data');
-const DB_PATH = path.join(DATA_DIR, 'nexa.db');
+const IS_SERVERLESS = !!process.env.VERCEL || !!process.env.AWS_LAMBDA_FUNCTION_VERSION;
+const DATA_DIR = IS_SERVERLESS ? '/tmp' : path.resolve(__dirname, '../../../data');
+const DB_PATH = process.env.TEAMROOM_DB_PATH || process.env.NEXA_DB_PATH || path.join(DATA_DIR, 'teamroom.db');
+// Databases created before the Teamroom rebrand; loaded once, then persisted
+// under the new name so no local data is lost by the rename.
+const LEGACY_DB_PATH = path.join(DATA_DIR, 'nexa.db');
 
-if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+if (!fs.existsSync(DATA_DIR)) { try { fs.mkdirSync(DATA_DIR, { recursive: true }); } catch {} }
 
 let SQL;
 let db;
 
+let sqlWasmLocated = false;
+function locateSqlWasm() {
+  if (sqlWasmLocated) return;
+  sqlWasmLocated = true;
+  try {
+    // Try to resolve via Node's require resolution, then fall back to known paths.
+    let resolved = null;
+    try { resolved = require.resolve('sql.js/dist/sql-wasm.wasm'); } catch {}
+    if (!resolved) {
+      const candidates = [
+        path.resolve(__dirname, '../../../node_modules/sql.js/dist/sql-wasm.wasm'),
+        path.resolve(__dirname, '../node_modules/sql.js/dist/sql-wasm.wasm'),
+        '/var/task/node_modules/sql.js/dist/sql-wasm.wasm'
+      ];
+      for (const c of candidates) if (fs.existsSync(c)) { resolved = c; break; }
+    }
+    if (resolved) globalThis.__TEAMROOM_SQL_WASM__ = resolved;
+  } catch {}
+}
+
 export async function initDb() {
-  SQL = await initSqlJs();
-  const buf = fs.existsSync(DB_PATH) ? fs.readFileSync(DB_PATH) : null;
+  locateSqlWasm();
+  const opts = globalThis.__TEAMROOM_SQL_WASM__ ? { locateFile: () => globalThis.__TEAMROOM_SQL_WASM__ } : {};
+  SQL = await initSqlJs(opts);
+  let buf = null;
+  if (fs.existsSync(DB_PATH)) buf = fs.readFileSync(DB_PATH);
+  else if (fs.existsSync(LEGACY_DB_PATH)) buf = fs.readFileSync(LEGACY_DB_PATH);
   db = buf ? new SQL.Database(buf) : new SQL.Database();
   db.run('PRAGMA foreign_keys = ON;');
   migrate();
@@ -109,6 +137,21 @@ function migrate() {
       PRIMARY KEY (channel_id, user_id)
     );
 
+    CREATE TABLE IF NOT EXISTS reactions (
+      message_id TEXT NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      emoji TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      PRIMARY KEY (message_id, user_id, emoji)
+    );
+
+    CREATE TABLE IF NOT EXISTS channel_reads (
+      channel_id TEXT NOT NULL,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      last_read_at INTEGER NOT NULL,
+      PRIMARY KEY (channel_id, user_id)
+    );
+
     CREATE TABLE IF NOT EXISTS notifications (
       id TEXT PRIMARY KEY,
       user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -122,6 +165,9 @@ function migrate() {
     CREATE INDEX IF NOT EXISTS idx_tasks_project ON tasks(project_id, position);
     CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id, created_at DESC);
   `);
+  // incremental migration: IF NOT EXISTS cannot add columns to pre-existing tables
+  const msgCols = all(`PRAGMA table_info(messages)`).map(c => c.name);
+  if (!msgCols.includes('edited_at')) db.exec(`ALTER TABLE messages ADD COLUMN edited_at INTEGER`);
 }
 
 export function persist() {

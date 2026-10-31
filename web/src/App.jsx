@@ -1,5 +1,6 @@
 import React, { useEffect, useState, createContext, useContext, useCallback } from 'react';
 import Login from './pages/Login.jsx';
+import Landing from './pages/Landing.jsx';
 import Dashboard from './pages/Dashboard.jsx';
 import { api, getToken, clearToken, setToken, getStoredUser, setStoredUser, clearStoredUser } from './lib/api.js';
 import { rt } from './lib/ws.js';
@@ -7,22 +8,34 @@ import { rt } from './lib/ws.js';
 const AppCtx = createContext(null);
 export const useApp = () => useContext(AppCtx);
 
+function useRoute() {
+  const [route, setRoute] = useState(window.location.pathname);
+  useEffect(() => {
+    const onPop = () => setRoute(window.location.pathname);
+    window.addEventListener('popstate', onPop);
+    return () => window.removeEventListener('popstate', onPop);
+  }, []);
+  const nav = useCallback((to) => { window.history.pushState({}, '', to); setRoute(to); window.scrollTo(0,0); }, []);
+  return [route, nav];
+}
+
 export default function App() {
   const [user, setUser] = useState(getStoredUser());
   const [ready, setReady] = useState(false);
-  const [theme, setTheme] = useState(localStorage.getItem('nexa_theme') || 'dark');
-  const [page, setPage] = useState('home'); // home | chat | projects | files | team | settings
+  const [theme, setTheme] = useState(localStorage.getItem('teamroom_theme') ?? localStorage.getItem('nexa_theme') ?? 'dark');
+  const [page, setPage] = useState('home');
   const [activeProjectId, setActiveProjectId] = useState(null);
   const [activeChannel, setActiveChannel] = useState('global');
   const [toasts, setToasts] = useState([]);
   const [notifications, setNotifications] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [onlineUsers, setOnlineUsers] = useState(new Map());
+  const [users, setUsers] = useState([]);
+  const [route, nav] = useRoute();
 
-  // Apply theme
   useEffect(() => {
     document.documentElement.classList.toggle('dark', theme === 'dark');
-    localStorage.setItem('nexa_theme', theme);
+    localStorage.setItem('teamroom_theme', theme);
   }, [theme]);
 
   const toggleTheme = useCallback(() => setTheme(t => t === 'dark' ? 'light' : 'dark'), []);
@@ -33,7 +46,6 @@ export default function App() {
     setTimeout(() => setToasts(t => t.filter(x => x.id !== id)), 3500);
   }, []);
 
-  // Session boot: validate token
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -42,47 +54,41 @@ export default function App() {
         try {
           const me = await api.get('/api/auth/me');
           if (!cancelled) setUser(me.user);
-        } catch {
-          clearToken(); clearStoredUser(); setUser(null);
-        }
+        } catch { clearToken(); clearStoredUser(); setUser(null); }
       }
       setReady(true);
     })();
     return () => { cancelled = true; };
   }, []);
 
-  // Connect WS after auth
   useEffect(() => {
     if (!user) return;
     rt.connect();
-    const off1 = rt.on('auth:ok', () => { rt.subscribe('global'); });
-    const off2 = rt.on('notification', (ev) => {
+    const offs = [];
+    offs.push(rt.on('auth:ok', () => rt.subscribe('global')));
+    offs.push(rt.on('notification', (ev) => {
       const n = { id: ev.notification.id, kind: ev.notification.type, title: ev.notification.title, body: ev.notification.body, createdAt: ev.notification.createdAt, read: false };
       setNotifications(ns => [n, ...ns].slice(0, 100));
       setUnreadCount(c => c + 1);
       toast(n.title, 'info');
-    });
-    const off3 = rt.on('presence', (ev) => {
-      setOnlineUsers(m => {
-        const n = new Map(m);
-        if (ev.online) n.set(ev.userId, ev.user); else n.delete(ev.userId);
-        return n;
-      });
-    });
-    const off4 = rt.on('presence:roster', (ev) => {
-      const m = new Map();
-      for (const u of ev.users) m.set(u.id, u);
-      setOnlineUsers(m);
-    });
-    const off5 = rt.on('user:join', (ev) => toast(`${ev.user.name} joined the team`, 'success'));
-    const off6 = rt.on('file:new', (ev) => toast(`${ev.uploader.name} uploaded ${ev.file.name}`, 'info'));
-    const off7 = rt.on('project:create', () => toast('New project created', 'success'));
-    return () => { off1(); off2(); off3(); off4(); off5(); off6(); off7(); };
+    }));
+    offs.push(rt.on('presence', (ev) => {
+      setOnlineUsers(m => { const n = new Map(m); if (ev.online) n.set(ev.userId, ev.user); else n.delete(ev.userId); return n; });
+    }));
+    offs.push(rt.on('presence:roster', (ev) => {
+      const m = new Map(); for (const u of ev.users) m.set(u.id, u); setOnlineUsers(m);
+    }));
+    offs.push(rt.on('user:join', (ev) => { toast(`${ev.user.name} joined the team`, 'success'); setUsers(us => us.some(u => u.id === ev.user.id) ? us : [...us, ev.user]); }));
+    offs.push(rt.on('user:update', (ev) => setUsers(us => us.map(u => u.id === ev.user.id ? ev.user : u))));
+    offs.push(rt.on('user:leave', (ev) => setUsers(us => us.filter(u => u.id !== ev.userId))));
+    offs.push(rt.on('file:new', (ev) => toast(`${ev.uploader.name} uploaded ${ev.file.name}`, 'info')));
+    offs.push(rt.on('project:create', () => toast('New project created', 'success')));
+    return () => offs.forEach(f => f());
   }, [user, toast]);
 
-  // Fetch notifications on auth
   useEffect(() => {
     if (!user) return;
+    api.get('/api/users').then(r => setUsers(r.users)).catch(() => {});
     api.get('/api/notifications').then(n => {
       setNotifications(n.notifications.map(x => ({ ...x, read: !!x.readAt, kind: x.type, title: x.payload.title || x.type, body: x.payload.body || '' })));
       setUnreadCount(n.notifications.filter(x => !x.readAt).length);
@@ -92,22 +98,33 @@ export default function App() {
   const login = async (email, password) => {
     const r = await api.post('/api/auth/login', { email, password });
     setToken(r.token); setStoredUser(r.user); setUser(r.user);
+    nav('/dashboard');
   };
   const register = async (email, name, password) => {
     const r = await api.post('/api/auth/register', { email, name, password });
     setToken(r.token); setStoredUser(r.user); setUser(r.user);
+    nav('/dashboard');
   };
   const logout = () => {
     clearToken(); clearStoredUser(); setUser(null);
-    rt.close();
-    setPage('home'); setActiveChannel('global'); setActiveProjectId(null);
+    rt.close(); setPage('home'); setActiveChannel('global'); setActiveProjectId(null);
+    nav('/');
   };
+  const goSignIn = () => nav('/login');
+  const goSignUp = () => nav('/login?mode=register');
 
   const markAllRead = async () => {
     await api.post('/api/notifications/read-all', {});
     setNotifications(ns => ns.map(n => ({ ...n, read: true })));
     setUnreadCount(0);
   };
+
+  // Redirect logic
+  useEffect(() => {
+    if (!ready) return;
+    if (user && (route === '/' || route === '/login')) nav('/dashboard');
+    if (!user && route.startsWith('/dashboard')) nav('/login');
+  }, [user, route, ready, nav]);
 
   const ctx = {
     user, login, register, logout, ready,
@@ -117,16 +134,22 @@ export default function App() {
     activeChannel, setActiveChannel,
     toasts, toast,
     notifications, setNotifications, unreadCount, setUnreadCount, markAllRead,
-    onlineUsers, rt
+    onlineUsers, users, rt, nav
   };
 
   if (!ready) {
-    return <div className="h-full flex items-center justify-center text-muted">Loading Nexa…</div>;
+    return <div className="h-full flex items-center justify-center text-muted">Loading Teamroom…</div>;
   }
+
+  const isLanding = route === '/' && !user;
+  const isLogin = route.startsWith('/login') && !user;
+  const isApp = !!user;
 
   return (
     <AppCtx.Provider value={ctx}>
-      {!user ? <Login /> : <Dashboard />}
+      {isLanding && <Landing />}
+      {isLogin && <Login />}
+      {isApp && <Dashboard />}
       <ToastContainer toasts={toasts} />
     </AppCtx.Provider>
   );

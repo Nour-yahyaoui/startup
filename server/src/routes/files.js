@@ -8,8 +8,9 @@ import { publicUser } from '../hub.js';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const UPLOAD_DIR = path.resolve(__dirname, '../../../uploads');
-if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+const IS_SERVERLESS = !!process.env.VERCEL || !!process.env.AWS_LAMBDA_FUNCTION_VERSION;
+const UPLOAD_DIR = IS_SERVERLESS ? '/tmp/uploads' : path.resolve(__dirname, '../../../uploads');
+if (!fs.existsSync(UPLOAD_DIR)) { try { fs.mkdirSync(UPLOAD_DIR, { recursive: true }); } catch {} }
 
 export async function fileRoutes(app) {
   const auth = app.authenticate;

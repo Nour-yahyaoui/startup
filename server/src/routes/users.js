@@ -1,6 +1,6 @@
 import { all, get, run } from '../db/index.js';
 import { publicUser } from '../hub.js';
-import { hashPassword } from '../auth.js';
+import { hashPassword, verifyPassword } from '../auth.js';
 import { nanoid } from 'nanoid';
 import { pickColor } from '../hub.js';
 
@@ -48,6 +48,29 @@ export async function userRoutes(app) {
     if (req.params.id === req.user.id) return reply.code(400).send({ error: 'Cannot delete yourself' });
     run('DELETE FROM users WHERE id = ?', [req.params.id]);
     app.hub.broadcast('user:leave', { userId: req.params.id });
+    return { ok: true };
+  });
+
+  // ---- self-service profile (no admin needed) ----
+  app.patch('/api/users/me', { preHandler: [auth] }, async (req, reply) => {
+    const { name, title, avatarColor } = req.body || {};
+    if (name !== undefined && !String(name).trim()) return reply.code(400).send({ error: 'Name cannot be empty' });
+    const color = avatarColor && /^#[0-9a-fA-F]{6}$/.test(avatarColor) ? avatarColor : null;
+    run('UPDATE users SET name = COALESCE(?, name), title = ?, avatar_color = COALESCE(?, avatar_color) WHERE id = ?',
+      [name ? String(name).trim() : null, title !== undefined ? title : req.user.title, color, req.user.id]);
+    const updated = get('SELECT * FROM users WHERE id = ?', [req.user.id]);
+    app.hub.broadcast('user:update', { user: publicUser(updated) });
+    return { user: publicUser(updated) };
+  });
+
+  app.post('/api/users/me/password', { preHandler: [auth] }, async (req, reply) => {
+    const { current, next } = req.body || {};
+    if (!current || !next) return reply.code(400).send({ error: 'Current and new password are required' });
+    if (String(next).length < 6) return reply.code(400).send({ error: 'New password must be at least 6 characters' });
+    const row = get('SELECT * FROM users WHERE id = ?', [req.user.id]);
+    const ok = await verifyPassword(current, row.password_hash);
+    if (!ok) return reply.code(403).send({ error: 'That current password does not match. Nothing was changed.' });
+    run('UPDATE users SET password_hash = ? WHERE id = ?', [await hashPassword(next), req.user.id]);
     return { ok: true };
   });
 

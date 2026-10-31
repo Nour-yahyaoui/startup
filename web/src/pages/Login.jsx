@@ -4,7 +4,8 @@ import { useApp } from '../App.jsx';
 
 export default function Login() {
   const { login, register, toast, theme, toggleTheme } = useApp();
-  const [mode, setMode] = useState('login'); // login | register
+  const initialMode = window.location.search.includes('mode=register') ? 'register' : 'login';
+  const [mode, setMode] = useState(initialMode);
   const [email, setEmail] = useState('');
   const [name, setName] = useState('');
   const [password, setPassword] = useState('');
@@ -22,9 +23,12 @@ export default function Login() {
   };
 
   return (
-    <div className="h-full flex items-center justify-center p-6">
+    <div className="h-full flex items-center justify-center p-6 relative">
       <button onClick={toggleTheme} className="absolute top-4 right-4 btn-ghost" title="Toggle theme">
         <Icon name={theme === 'dark' ? 'sun' : 'moon'} />
+      </button>
+      <button onClick={() => window.history.back()} className="absolute top-4 left-4 btn-ghost" title="Back">
+        <Icon name="arrowLeft" size={16}/> Back
       </button>
       <div className="w-full max-w-md">
         <div className="flex items-center gap-3 mb-8 justify-center">
@@ -32,7 +36,7 @@ export default function Login() {
             <Icon name="logo" size={22} />
           </div>
           <div>
-            <h1 className="text-2xl font-semibold tracking-tight">Nexa</h1>
+            <h1 className="text-2xl font-semibold tracking-tight">Teamroom</h1>
             <p className="text-sm text-muted">Realtime workspace for teams</p>
           </div>
         </div>

@@ -66,7 +66,7 @@ function TopBar({ children }) {
   return (
     <header className="h-14 border-b border-border bg-bg/80 backdrop-blur px-6 flex items-center justify-between sticky top-0 z-20">
       <div className="flex items-center gap-3">
-        <h2 className="text-base font-semibold">{titles[page] || 'Nexa'}</h2>
+        <h2 className="text-base font-semibold">{titles[page] || 'Teamroom'}</h2>
         <span className="chip"><Icon name="zap" size={12}/> Realtime</span>
       </div>
       {children}

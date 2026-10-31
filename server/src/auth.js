@@ -4,13 +4,19 @@ import { nanoid } from 'nanoid';
 import { run, get } from './db/index.js';
 import { pickColor } from './hub.js';
 
-const SECRET = process.env.NEXA_JWT_SECRET || 'nexa-dev-secret-change-me';
+const SECRET = process.env.TEAMROOM_JWT_SECRET || process.env.NEXA_JWT_SECRET || 'teamroom-dev-secret-change-me';
+// Tokens issued before the Teamroom rebrand were signed with this key; keep
+// verifying them so nobody gets logged out by the rename.
+const LEGACY_SECRET = process.env.NEXA_JWT_SECRET || 'nexa-dev-secret-change-me';
 
 export function signToken(user) {
   return createSigner({ key: SECRET, expiresIn: '7d' })({ sub: user.id, role: user.role });
 }
 export function createVerifier() {
-  return _createVerifier({ key: SECRET });
+  const primary = _createVerifier({ key: SECRET });
+  if (LEGACY_SECRET === SECRET) return primary;
+  const legacy = _createVerifier({ key: LEGACY_SECRET });
+  return (token) => { try { return primary(token); } catch { return legacy(token); } };
 }
 
 export async function hashPassword(pw) {

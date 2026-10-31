@@ -20,7 +20,7 @@ async function main() {
       [nanoid(12), r.name, JSON.stringify(r.permissions), now]
     );
   }
-  console.log('✓ Database initialized at data/nexa.db');
+  console.log('✓ Database initialized');
   console.log('  Roles:', DEFAULT_ROLES.map(r => r.name).join(', '));
 }
 

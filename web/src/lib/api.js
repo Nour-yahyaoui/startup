@@ -1,8 +1,9 @@
-const TOKEN_KEY = 'nexa_token';
+const TOKEN_KEY = 'teamroom_token';
+const LEGACY_TOKEN_KEY = 'nexa_token'; // pre-rebrand sessions stay valid
 
-export function getToken() { return localStorage.getItem(TOKEN_KEY); }
+export function getToken() { return localStorage.getItem(TOKEN_KEY) ?? localStorage.getItem(LEGACY_TOKEN_KEY); }
 export function setToken(t) { localStorage.setItem(TOKEN_KEY, t); }
-export function clearToken() { localStorage.removeItem(TOKEN_KEY); }
+export function clearToken() { localStorage.removeItem(TOKEN_KEY); localStorage.removeItem(LEGACY_TOKEN_KEY); }
 
 async function request(url, opts = {}) {
   const headers = { 'Content-Type': 'application/json', ...(opts.headers || {}) };
@@ -38,7 +39,8 @@ export const api = {
 };
 
 // ---- Auth helpers stored in localStorage for UI state ----
-const USER_KEY = 'nexa_user';
-export const getStoredUser = () => { try { return JSON.parse(localStorage.getItem(USER_KEY)); } catch { return null; } };
+const USER_KEY = 'teamroom_user';
+const LEGACY_USER_KEY = 'nexa_user';
+export const getStoredUser = () => { try { return JSON.parse(localStorage.getItem(USER_KEY) ?? localStorage.getItem(LEGACY_USER_KEY)); } catch { return null; } };
 export const setStoredUser = (u) => localStorage.setItem(USER_KEY, JSON.stringify(u));
-export const clearStoredUser = () => localStorage.removeItem(USER_KEY);
+export const clearStoredUser = () => { localStorage.removeItem(USER_KEY); localStorage.removeItem(LEGACY_USER_KEY); };

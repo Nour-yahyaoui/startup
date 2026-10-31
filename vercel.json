@@ -1,0 +1,13 @@
+{
+  "installCommand": "npm install --no-audit --no-fund",
+  "buildCommand": "cd web && npm install --no-audit --no-fund && npm run build",
+  "outputDirectory": "web/dist",
+  "framework": null,
+  "rewrites": [
+    { "source": "/api/(.*)", "destination": "/api/index.js" },
+    { "source": "/((?!api/|assets/|favicon).*)", "destination": "/index.html" }
+  ],
+  "functions": {
+    "api/index.js": { "maxDuration": 15, "includeFiles": "../node_modules/sql.js/dist/**" }
+  }
+}
