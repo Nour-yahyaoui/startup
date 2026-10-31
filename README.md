@@ -36,6 +36,8 @@ npm start              # serve the built frontend and API on :8787
 
 The automated tests create isolated temporary databases and upload directories; they do not use your workspace data. The Vite server proxies `/api` and `/ws` to the API so browser traffic stays on the same origin.
 
+The server temporarily overrides `@fastify/static`’s `glob` dependency to version 14 to address the [glob](https://github.com/advisories/GHSA-3g3m-2fjr-6pw4) and [minimatch](https://github.com/advisories/GHSA-g3hv-75wg-m249) advisories. Tests exercise static serving with and without wildcard routes; remove the override when the upstream plugin supports a fixed version.
+
 ### Configuration
 
 | Variable | Default | Purpose |

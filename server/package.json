@@ -20,5 +20,10 @@
     "nanoid": "^5.0.7",
     "sql.js": "^1.12.0",
     "ws": "^8.18.0"
+  },
+  "overrides": {
+    "@fastify/static": {
+      "glob": "^14.0.3"
+    }
   }
 }
